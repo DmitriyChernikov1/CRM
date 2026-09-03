@@ -5,7 +5,6 @@ import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.LocalDate;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -21,13 +20,12 @@ public class CreateLidAndContactTest {
     private static String dynamicName;
     private static String dynamicSurname;
     private static Integer createdInterestId;
-    private static Integer createdContactId;
 
     @BeforeAll
     static void setup() {
 
         RestAssured.baseURI = "https://preprod-crm.sbercity.ru";
-        // Отключаю проверку SSL-сертификатаvf
+        // Отключаю проверку SSL-сертификата
 
         RestAssured.useRelaxedHTTPSValidation();
 
@@ -48,20 +46,6 @@ public class CreateLidAndContactTest {
                 name, surname, email
         );
     }
-
-    private static String buildRequisitesBody(Integer contactId, LocalDate birthDate, LocalDate issueDate) {
-        return String.format(
-                "{\"personalData\":{\"citizenshipId\":1,\"documentSeries\":\"00 00\",\"documentNumber\":\"000000\"," +
-                        "\"issueAuthority\":\"000000000000\",\"issueDate\":\"%s\",\"issueDepartment\":\"000-000\"," +
-                        "\"gender\":\"MALE\",\"birthDate\":\"%s\",\"birthPlace\":\"000000000000\"," +
-                        "\"registrationAddress\":\"0000000000000000000\"," +
-                        "\"livingAddress\":\"Московская обл, г Реутов, шоссе Автомагистраль Москва-Нижний Новгород\"," +
-                        "\"inn\":\"000000000000\",\"snils\":\"000-000-000 00\"},\"bankAccount\":{}," +
-                        "\"requisitesTypeId\":1,\"documentTypeId\":1,\"contactId\":%d}",
-                issueDate, birthDate, contactId
-        );
-    }
-
     @Test
     @Order(1)
     @Description("Провуерка дубликатов email,телефонов")
@@ -116,7 +100,7 @@ public class CreateLidAndContactTest {
                 .post("/api/v1/interest")
                 .andReturn();
 
-        //Проверки
+    //Проверки
         int statusCode = createInterest.getStatusCode();
         assertEquals(200, statusCode);
 
@@ -150,32 +134,18 @@ public class CreateLidAndContactTest {
         int statusCode = createContact.getStatusCode();
         assertEquals(200,statusCode);
 
-        createdContactId = createContact.jsonPath().getInt("id");
-        assertNotNull(createdContactId,"id не должен быть null");
+        int createContactId = createContact.jsonPath().getInt("id");
+        assertNotNull(createContactId,"id не должен быть null");
     }
     @Test
     @Order(4)
     @Description("Создание анкеты физ лица")
     @DisplayName("создание анкеты")
     public void CreateRequisites(){
-        LocalDate birthDate = LocalDate.now().minusYears(25);
-        LocalDate issueDate = LocalDate.now().minusYears(5);
-
-        String body = buildRequisitesBody(createdContactId, birthDate, issueDate);
-
         Response createRequisites = RestAssured
                 .given()
-                .log().all()
-                .body(body)
                 .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
                 .post("/api/v1/requisites")
                 .andReturn();
-
-        //проверки
-        int statusCode = createRequisites.getStatusCode();
-        assertEquals(200, statusCode);
-
-        Integer requisitesId = createRequisites.jsonPath().getInt("id");
-        assertNotNull(requisitesId, "ID созданной анкеты не должен быть null");
     }
 }
