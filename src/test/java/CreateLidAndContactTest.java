@@ -27,7 +27,7 @@ public class CreateLidAndContactTest {
     static void setup() {
 
         RestAssured.baseURI = "https://preprod-crm.sbercity.ru";
-        // Отключаю проверку SSL-сертификатаv
+        // Отключаю проверку SSL-сертификатаvf
 
         RestAssured.useRelaxedHTTPSValidation();
 
