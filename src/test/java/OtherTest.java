@@ -3,9 +3,6 @@ import io.restassured.RestAssured;
 import io.restassured.response.Response;
 import org.junit.jupiter.api.*;
 
-import java.sql.SQLOutput;
-import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -13,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 public class OtherTest {
 
     private static String accessToken;
+
     @BeforeAll
     static void setup() {
 
