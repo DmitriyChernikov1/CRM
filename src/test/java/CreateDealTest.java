@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-public class CreateLidAndContactTest {
+public class CreateDealTest {
     private static String accessToken;
     private static final Logger log = LoggerFactory.getLogger(CreateLidAndContactTest.class);
     private static String dynamicEmail;
@@ -179,4 +179,5 @@ public class CreateLidAndContactTest {
         Integer requisitesId = createRequisites.jsonPath().getInt("id");
         assertNotNull(requisitesId, "ID созданной анкеты не должен быть null");
     }
+
 }
