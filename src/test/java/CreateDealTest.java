@@ -22,6 +22,7 @@ public class CreateDealTest {
     private static String dynamicSurname;
     private static Integer createdInterestId;
     private static Integer createdContactId;
+    private static Integer idRealEstate;
 
     @BeforeAll
     static void setup() {
@@ -37,8 +38,8 @@ public class CreateDealTest {
         String uniqueSuffix = UUID.randomUUID().toString().substring(0, 8);
         dynamicEmail = "autotest." + uniqueSuffix + "@gmail.com";
         dynamicPhone = "+7" + (9000000000L + ThreadLocalRandom.current().nextLong(100000000L));
-        dynamicName = "Дмитрий" + uniqueSuffix;
-        dynamicSurname = "Черников" + uniqueSuffix;
+        dynamicName = "Дмитрий";
+        dynamicSurname = "Черников";
     }
     private static String buildInterestBody(String name, String surname, String email) {
         return String.format(
@@ -179,5 +180,57 @@ public class CreateDealTest {
         Integer requisitesId = createRequisites.jsonPath().getInt("id");
         assertNotNull(requisitesId, "ID созданной анкеты не должен быть null");
     }
+    @Test
+    @Order(5)
+    @Description("Поиск ОН")
+    @DisplayName("Поиск ОН")
+    public void catalogList(){
+        String body = "{\"page\":1,\"size\":100,\"sortBy\":[{\"property\":\"status\",\"direction\":\"ASC\"}],\"filter\":{\"complexId\":16,\"price\":{\"from\":100000},\"statusIds\":[1]}}";
+        Response list = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/real_estate/catalog/list")
+                .andReturn();
+        int statusCode =list.getStatusCode();
+        assertEquals(200,statusCode);
+        int totalCount =list.jsonPath().getInt("totalCount");
+        assertTrue(totalCount>0);
+        idRealEstate = list.jsonPath().getInt("data.id[0]");
+        System.out.println(idRealEstate);
 
+    }
+    @Test
+    @Order(6)
+    @Description("Перевод статуса лида")
+    @DisplayName("Лид в статус интерес")
+    public void interestLead (){
+
+        Response like = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/interest/"+ createdInterestId +"/interest")
+                .andReturn();
+        int statuscode =like.getStatusCode();
+        assertEquals(200,statuscode);
+
+    }
+    @Test
+    @Order(7)
+    @Description("добавление ОН")
+    @DisplayName("Лайк ОН")
+    public void likesON(){
+        String body = "[{\"objectTypeId\":1,\"objectId\":" + idRealEstate + "}]";
+        Response like = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .patch("/api/v1/interest/" + createdInterestId + "/likes")
+                .andReturn();
+        int statuscode =like.getStatusCode();
+        assertEquals(200,statuscode);
+        String error = like.getBody().asString();
+        System.out.println(error);
+
+    }
 }

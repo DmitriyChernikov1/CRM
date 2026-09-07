@@ -9,8 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OtherTest {
 
-    private static String accessToken;
-
+    public static String accessToken;
+    static {
+        accessToken = new AuthTokenTest().getAuthToken();
+    }
     @BeforeAll
     static void setup() {
 
@@ -19,7 +21,8 @@ public class OtherTest {
 
         RestAssured.useRelaxedHTTPSValidation();
 
-        accessToken = new AuthTokenTest().getAuthToken();}
+        }
+
     private static int id;
     private static int typeId;
     @Test
@@ -39,7 +42,7 @@ public class OtherTest {
         typeId = list.jsonPath().getInt("data.type.id[0]");
         int statusCode = list.statusCode();
         assertEquals(200,statusCode);
-
+        list.prettyPrint();
         }
     @Test
     @Order(2)
@@ -57,6 +60,7 @@ public void update(){
 
         int statusCode = update.statusCode();
         assertEquals(200,statusCode);
+        update.prettyPrint();
     }
     }
 
