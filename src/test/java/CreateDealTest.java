@@ -16,21 +16,20 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CreateDealTest {
-    private static Integer counterpartiesId; // id частника сделки
+    private static Integer counterpartiesId; // id участника сделки
     private static Integer createdRequisitesId;  // id реквизита
     private static Integer finishingId; // отделка
-    private static Integer meetTypeId;
-    private static Integer createdMortgageId;
-    private static Integer createdDealId;
-    private static String accessToken;
-    private static final Logger log = LoggerFactory.getLogger(CreateLidAndContactTest.class);
-    private static String dynamicEmail;
-    private static String dynamicPhone;
-    private static String dynamicName;
-    private static String dynamicSurname;
-    private static Integer createdInterestId;
-    private static Integer createdContactId;
-    private static Integer idRealEstate;
+    private static Integer meetTypeId; // первичная встреча
+    private static Integer createdMortgageId; //ипотека
+    private static Integer createdDealId; //  сделка
+    private static String accessToken;  // токен авторизации
+    private static String dynamicEmail; //генерируемая почта
+    private static String dynamicPhone;//генерируемый телефон
+    private static String dynamicName; // генерируем имя
+    private static String dynamicSurname;// генерируем фамилию
+    private static Integer createdInterestId;//лид
+    private static Integer createdContactId; //контакт
+    private static Integer idRealEstate; //ОН
 
     @BeforeAll
     static void setup() {
