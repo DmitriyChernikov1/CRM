@@ -2,6 +2,8 @@ import io.qameta.allure.Description;
 import io.restassured.RestAssured;
 import io.restassured.response.Response;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CreateDealTest {
+    private static Integer createdMortgageId;
+    private static Integer createdDealId;
     private static String accessToken;
     private static final Logger log = LoggerFactory.getLogger(CreateLidAndContactTest.class);
     private static String dynamicEmail;
@@ -63,44 +67,33 @@ public class CreateDealTest {
         );
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {"phone", "email"})
     @Order(1)
-    @Description("Провуерка дубликатов email,телефонов")
+    @Description("Проверка дубликатов email, телефонов")
     @DisplayName("проверка дубликатов перед созданием лида")
-    public void CheckDuplicate(){
-        String body = String.format("{\"phones\":[\"%s\"],\"emails\":[]}", dynamicPhone);
+    public void CheckDuplicate(String type) {
+        String body;
 
-        Response duplicatesPhone = RestAssured
+        if ("phone".equals(type)) {
+            body = String.format("{\"phones\":[\"%s\"],\"emails\":[]}", dynamicPhone);
+        } else {
+            body = String.format("{\"phones\":[],\"emails\":[\"%s\"]}", dynamicEmail);
+        }
+
+        Response response = RestAssured
                 .given()
                 .body(body)
                 .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
                 .post("/api/v1/interest/duplicates")
                 .andReturn();
-        int statuscode = duplicatesPhone.getStatusCode();
-        assertEquals (200,statuscode);
-        int totalCount = duplicatesPhone.jsonPath().getInt("totalCount");
-        assertEquals(0,totalCount,"дубль телефона");
+
+        int statuscode = response.getStatusCode();
+        assertEquals(200, statuscode);
+
+        int totalCount = response.jsonPath().getInt("totalCount");
+        assertEquals(0, totalCount, "Дубль " + type);
         System.out.println(body);
-
-
-        String body2 = String.format(
-                "{\"phones\":[],\"emails\":[\"%s\"]}",
-                dynamicEmail
-        );
-
-        Response duplicatesEmail = RestAssured
-                .given()
-                .body(body2)
-                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
-                .post("/api/v1/interest/duplicates")
-                .andReturn();
-        //проверки
-        int statusCodes = duplicatesEmail.getStatusCode();
-        assertEquals(200, statusCodes);
-
-        int totalCounts = duplicatesEmail.jsonPath().getInt("totalCount");
-        assertEquals(0, totalCounts, "Дубль почты");
-        System.out.println(body2);
     }
     @Test
     @Order(2)
@@ -233,4 +226,67 @@ public class CreateDealTest {
         System.out.println(error);
 
     }
+    @Test
+    @Order(8)
+    @Description("Создание сделки на основе объекта недвижимости и лида")
+    @DisplayName("Создание сделки")
+    public void createDeal() {
+        String body = String.format(
+                "{\"objectTypeId\":1,\"objectId\":%d,\"interestId\":%d,\"reservationType\":1,\"payType\":3,\"objectFixedPrice\":true}",
+                idRealEstate, createdInterestId
+        );
+
+        Response createDeal = RestAssured
+                .given()
+                .log().ifValidationFails()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/deal")
+                .andReturn();
+
+        int statusCode = createDeal.getStatusCode();
+        assertEquals(200, statusCode);
+
+        createdDealId = createDeal.jsonPath().getInt("id");
+        assertNotNull(createdDealId, "ID созданной сделки не должен быть null");
+        assertTrue(createdDealId > 0, "ID сделки должен быть положительным числом");
+
+        String dealStatus = createDeal.jsonPath().getString("status.name");
+        assertNotNull(dealStatus, "У сделки должен быть статус");
+
+        Integer parentInterestId = createDeal.jsonPath().getInt("parentInterest.id");
+        assertEquals(createdInterestId, parentInterestId, "Сделка должна ссылаться на исходный лид");
+
+        System.out.println("Создана сделка: " + createdDealId);
+    }
+
+    @Test
+    @Order(9)
+    @Description("Получение сделки по id")
+    @DisplayName("Получение сделки")
+    public void getDeal() {
+        Response getDeal = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/deal/" + createdDealId)
+                .andReturn();
+
+        assertEquals(200, getDeal.getStatusCode());
+        assertEquals(createdDealId, getDeal.jsonPath().getInt("id"), "ID в ответе должен совпадать");
+    }
+
+    @Test
+    @Order(10)
+    @Description("Проверка количества активных договоров по сделке")
+    @DisplayName("Активные договоры сделки")
+    public void checkActiveAgreementsCount() {
+        Response response = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/deal/" + createdDealId + "/activeAgreementsCount")
+                .andReturn();
+
+        assertEquals(200, response.getStatusCode());
+    }
+
 }
