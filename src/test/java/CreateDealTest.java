@@ -16,8 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CreateDealTest {
-    private static Integer createdRequisitesId;
-    private static Integer finishingId;
+    private static Integer counterpartiesId; // id частника сделки
+    private static Integer createdRequisitesId;  // id реквизита
+    private static Integer finishingId; // отделка
     private static Integer meetTypeId;
     private static Integer createdMortgageId;
     private static Integer createdDealId;
@@ -261,6 +262,7 @@ public class CreateDealTest {
         assertEquals(createdInterestId, parentInterestId, "Сделка должна ссылаться на исходный лид");
 
         System.out.println("Создана сделка: " + createdDealId);
+        counterpartiesId = createDeal.jsonPath().getInt("counterparties.id[0]");
     }
 
     @Test
@@ -511,5 +513,150 @@ public class CreateDealTest {
         assertEquals(200, schedule.getStatusCode());
         assertFalse(schedule.jsonPath().getBoolean("edited"));
         assertEquals(0, schedule.jsonPath().getDouble("totalAmount"));
+    }
+    @Test
+    @Order(22)
+    @Description("Попытка согласовать сделку без заполненных обязательных полей — ожидаем 422")
+    @DisplayName("Согласование сделки без данных (негативный)")
+    public void coordinateDealWithoutRequiredFields() {
+        Response coordinate = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/coordinate")
+                .andReturn();
+
+        assertEquals(422, coordinate.getStatusCode());
+        String error = coordinate.jsonPath().getString("error");
+        assertEquals("Не заполнены обязательные поля", error);
+
+        java.util.List<String> missingFields = coordinate.jsonPath().getList("fields.field", String.class);
+        assertTrue(missingFields.contains("loan.bank"), "Среди незаполненных полей должен быть банк по кредиту");
+    }
+
+    @Test
+    @Order(23)
+    @Description("Получение реквизитов контакта для последующего заполнения сделки")
+    @DisplayName("Список реквизитов контакта")
+    public void getContactRequisites() {
+        String body = String.format("{\"filter\":{\"contactId\":%d},\"page\":1,\"size\":1000}", createdContactId);
+
+        Response requisitesList = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/requisites/list")
+                .andReturn();
+
+        assertEquals(200, requisitesList.getStatusCode());
+        int totalCount = requisitesList.jsonPath().getInt("totalCount");
+        assertTrue(totalCount > 0, "У контакта должна быть хотя бы одна анкета");
+
+        createdRequisitesId = requisitesList.jsonPath().getInt("data[0].id");
+        assertNotNull(createdRequisitesId, "ID реквизитов не должен быть null");
+    }
+
+    @Test
+    @Order(24)
+    @Description("Получение доступных вариантов отделки по сделке")
+    @DisplayName("Справочник отделки сделки")
+    public void getFinishingOptions() {
+        Response finishing = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/deal/" + createdDealId + "/finishing")
+                .andReturn();
+
+        assertEquals(200, finishing.getStatusCode());
+        finishingId = finishing.jsonPath().getInt("[0].id");
+        assertNotNull(finishingId, "Для сделки должен быть доступен хотя бы один вариант отделки");
+    }
+
+    @Test
+    @Order(25)
+    @Description("Заполнение обязательных полей сделки: договор, регистрация, кредит, отделка, реквизиты")
+    @DisplayName("Заполнение данных сделки")
+    public void updateDealDetails() {
+        String today = LocalDate.now().toString();
+
+        String body = String.format(
+                "{\"responsible\":{\"responsibleType\":\"USER\",\"responsibleId\":1}," +
+                        "\"contract\":{\"date\":\"%s\"},\"initialPaymentTerm\":5," +
+                        "\"registration\":{\"registrationTypeId\":2},\"creditLetter\":{\"creditLetterId\":3}," +
+                        "\"signerId\":1,\"formId\":1," +
+                        "\"loan\":{\"bankId\":1,\"initialDepositAmount\":90000,\"initialDepositTerm\":5," +
+                        "\"installmentPaymentDate\":15,\"contractCity\":\"Воронеж\"}," +
+                        "\"finishingId\":%d," +
+                        "\"counterparties\":[{\"id\":%d,\"requisitesTypeId\":1,\"clientRoleId\":1," +
+                        "\"useRequisitesForRefund\":false,\"engaged\":false}]}",
+                today, finishingId, counterpartiesId
+        );
+
+        Response updateDeal = RestAssured
+                .given()
+                .log().all()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .put("/api/v1/deal/" + createdDealId)
+                .andReturn();
+
+        assertEquals(200, updateDeal.getStatusCode());
+        assertEquals(createdDealId, updateDeal.jsonPath().getInt("id"));
+
+        String dealStatus = updateDeal.jsonPath().getString("status.name");
+        assertEquals("Подготовка", dealStatus, "После заполнения данных сделка должна перейти в статус 'Подготовка'");
+        System.out.println("Response Body: " + updateDeal.getBody().asString());
+    }
+
+    @Test
+    @Order(26)
+    @Description("Попытка согласовать сделку без графика платежей — ожидаем 422")
+    @DisplayName("Согласование сделки без графика платежей (негативный)")
+    public void coordinateDealWithoutSchedule() {
+        Response coordinate = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/coordinate")
+                .andReturn();
+
+        assertEquals(422, coordinate.getStatusCode());
+        String error = coordinate.jsonPath().getString("error");
+        assertEquals("Не заполнен блок полей \u201cГрафик платежей\u201d", error);
+    }
+
+    @Test
+    @Order(27)
+    @Description("Генерация графика платежей по сделке")
+    @DisplayName("Генерация графика платежей")
+    public void generateSchedulePayments() {
+        Response schedule = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/schedule_payments")
+                .andReturn();
+
+        assertEquals(200, schedule.getStatusCode());
+        double totalAmount = schedule.jsonPath().getDouble("totalAmount");
+        assertTrue(totalAmount > 0, "После генерации график платежей должен иметь ненулевую сумму");
+
+        java.util.List<?> items = schedule.jsonPath().getList("items");
+        assertFalse(items.isEmpty(), "График платежей должен содержать хотя бы один платёж");
+    }
+
+    @Test
+    @Order(28)
+    @Description("Успешное согласование сделки после заполнения всех обязательных данных")
+    @DisplayName("Согласование сделки")
+    public void coordinateDeal() {
+        Response coordinate = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/coordinate")
+                .andReturn();
+
+        assertEquals(200, coordinate.getStatusCode());
+        assertEquals(createdDealId, coordinate.jsonPath().getInt("id"));
+
+        String dealStatus = coordinate.jsonPath().getString("status.name");
+        assertEquals("Согласование", dealStatus, "После успешного coordinate сделка должна перейти в статус 'Согласование'");
     }
 }
