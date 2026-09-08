@@ -288,5 +288,206 @@ public class CreateDealTest {
 
         assertEquals(200, response.getStatusCode());
     }
+    @Test
+    @Order(11)
+    @Description("Проверка списка ипотек по сделке перед созданием")
+    @DisplayName("Список ипотек сделки (пустой)")
+    public void checkMortgagesListEmpty() {
+        String body = "{\"page\":1,\"size\":100,\"sortBy\":[{\"property\":\"crDate\",\"direction\":\"DESC\"}]}";
 
+        Response mortgages = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/deal/" + createdDealId + "/mortgages")
+                .andReturn();
+
+        assertEquals(200, mortgages.getStatusCode());
+        int totalCount = mortgages.jsonPath().getInt("totalCount");
+        assertEquals(0, totalCount, "У новой сделки не должно быть ипотек");
+    }
+
+    @Test
+    @Order(12)
+    @Description("Создание ипотеки по сделке")
+    @DisplayName("Создание ипотеки")
+    public void createMortgage() {
+        String body = String.format(
+                "{\"provider\":1,\"responsible\":{\"responsibleType\":\"USER\",\"responsibleId\":1}," +
+                        "\"relations\":[{\"typeId\":1,\"relatedId\":%d},{\"typeId\":2,\"relatedId\":%d},{\"typeId\":3,\"relatedId\":%d}]}",
+                createdInterestId, createdContactId, createdDealId
+        );
+
+        Response createMortgage = RestAssured
+                .given()
+                .log().ifValidationFails()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/mortgage")
+                .andReturn();
+
+        int statusCode = createMortgage.getStatusCode();
+        assertEquals(200, statusCode);
+
+        createdMortgageId = createMortgage.jsonPath().getInt("id");
+        assertNotNull(createdMortgageId, "ID созданной ипотеки не должен быть null");
+        assertTrue(createdMortgageId > 0, "ID ипотеки должен быть положительным числом");
+
+        String mortgageStatus = createMortgage.jsonPath().getString("status.name");
+        assertNotNull(mortgageStatus, "У ипотеки должен быть статус");
+
+        String bankStatus = createMortgage.jsonPath().getString("bankStatus.name");
+        assertNotNull(bankStatus, "У ипотеки должен быть банковский статус");
+
+        System.out.println("Создана ипотека: " + createdMortgageId);
+    }
+
+    @Test
+    @Order(13)
+    @Description("Проверка связей созданной ипотеки с лидом, контактом и сделкой")
+    @DisplayName("Проверка связей ипотеки")
+    public void getMortgageAndCheckRelations() {
+        Response getMortgage = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/mortgage/" + createdMortgageId)
+                .andReturn();
+
+        assertEquals(200, getMortgage.getStatusCode());
+        assertEquals(createdMortgageId, getMortgage.jsonPath().getInt("id"));
+
+        java.util.List<Integer> relatedIds = getMortgage.jsonPath().getList("crmRelations.relatedId", Integer.class);
+        assertTrue(relatedIds.contains(createdDealId), "Ипотека должна быть связана со сделкой");
+        assertTrue(relatedIds.contains(createdInterestId), "Ипотека должна быть связана с лидом");
+        assertTrue(relatedIds.contains(createdContactId), "Ипотека должна быть связана с контактом");
+    }
+    @Test
+    @Order(14)
+    @Description("Проверка, что первая встреча по сделке ещё не проведена")
+    @DisplayName("Проверка первой встречи (до)")
+    public void checkFirstMeetingNotCompleted() {
+        Response check = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/deal/" + createdDealId + "/first-meeting/check")
+                .andReturn();
+
+        assertEquals(200, check.getStatusCode());
+        assertFalse(check.jsonPath().getBoolean("hasCompletedFirstMeeting"),
+                "Изначально первая встреча не должна быть проведена");
+    }
+
+    @Test
+    @Order(15)
+    @Description("Фиксация проведения первой встречи по сделке")
+    @DisplayName("Проведение первой встречи")
+    public void createFirstMeeting() {
+        String body = "{\"meetTypeId\":11}"; // тип встречи из справочника VocTaskMeetType
+
+        Response createMeeting = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/deal/" + createdDealId + "/first-meeting/create")
+                .andReturn();
+
+        assertEquals(200, createMeeting.getStatusCode());
+    }
+
+    @Test
+    @Order(16)
+    @Description("Заполнение анкеты контакта перед сделкой")
+    @DisplayName("Обновление данных контакта")
+    public void updateContactProfile() {
+        String body = String.format(
+                "{\"vip\":false,\"media\":false,\"smsNotificationsDisabled\":false,\"responsibleUserId\":1," +
+                        "\"name\":\"%s\",\"family\":\"%s\"," +
+                        "\"contactsInfoList\":[{\"contactsInfoTypeId\":2,\"name\":\"%s\",\"isConfirm\":false}]," +
+                        "\"waitingList\":[],\"pol\":\"MALE\",\"birthDate\":\"2001-09-08\",\"ageGroupId\":1," +
+                        "\"familyComposition\":2,\"hasChildren\":false,\"regionOfLiving\":41," +
+                        "\"sberEmployeeStatusId\":2,\"familyRelations\":[],\"hasCar\":false}",
+                dynamicName, dynamicSurname, dynamicEmail
+        );
+
+        Response updateContact = RestAssured
+                .given()
+                .log().ifValidationFails()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .put("/api/v1/contact/" + createdContactId)
+                .andReturn();
+
+        assertEquals(200, updateContact.getStatusCode());
+        assertEquals(createdContactId, updateContact.jsonPath().getInt("id"));
+    }
+
+    @Test
+    @Order(17)
+    @Description("Обновление аналитики по лиду (целевой/нецелевой)")
+    @DisplayName("Аналитика лида")
+    public void updateInterestAnalytic() {
+        String body = "{\"isTarget\":true,\"informationNotProvided\":true}";
+
+        Response updateAnalytic = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .put("/api/v1/interest/" + createdInterestId + "/analytic")
+                .andReturn();
+
+        assertEquals(200, updateAnalytic.getStatusCode());
+    }
+
+    @Test
+    @Order(18)
+    @Description("Заполнение анкеты интереса (форма объекта)")
+    @DisplayName("Форма интереса")
+    public void updateInterestForm() {
+        String body = "{\"questionnaireType\":\"DEAL\",\"interestCategory\":1,\"interestingHousings\":[]," +
+                "\"quartersOfInterests\":[],\"numberOfBedrooms\":[],\"designFeatures\":[],\"floors\":[]," +
+                "\"informationNotProvided\":true}";
+
+        Response updateForm = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .put("/api/v1/interest/" + createdInterestId + "/form")
+                .andReturn();
+
+        assertEquals(200, updateForm.getStatusCode());
+    }
+
+    @Test
+    @Order(19)
+    @Description("Подготовка сделки — перевод лида в статус 'Сделка'")
+    @DisplayName("Подготовка сделки")
+    public void prepareDeal() {
+        Response prepare = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/prepare")
+                .andReturn();
+
+        assertEquals(200, prepare.getStatusCode());
+        assertEquals(createdDealId, prepare.jsonPath().getInt("id"));
+
+        String leadStatus = prepare.jsonPath().getString("parentInterest.status.name");
+        assertEquals("Сделка", leadStatus, "После подготовки сделки лид должен перейти в статус 'Сделка'");
+    }
+
+    @Test
+    @Order(20)
+    @Description("Проверка графика платежей по подготовленной сделке")
+    @DisplayName("График платежей сделки")
+    public void checkSchedulePayments() {
+        Response schedule = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/deal/" + createdDealId + "/schedule_payments")
+                .andReturn();
+
+        assertEquals(200, schedule.getStatusCode());
+        assertFalse(schedule.jsonPath().getBoolean("edited"));
+        assertEquals(0, schedule.jsonPath().getDouble("totalAmount"));
+    }
 }
