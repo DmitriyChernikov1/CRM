@@ -16,6 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CreateDealTest {
+    private static Integer createdRequisitesId;
+    private static Integer finishingId;
+    private static Integer meetTypeId;
     private static Integer createdMortgageId;
     private static Integer createdDealId;
     private static String accessToken;
@@ -379,10 +382,29 @@ public class CreateDealTest {
 
     @Test
     @Order(15)
+    @Description("Получение актуального id типа встречи 'Первичная встреча' из справочника")
+    @DisplayName("Справочник типов встреч")
+    public void getMeetTypeId() {
+        Response vocabulary = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/vocabulary/VocTaskMeetType")
+                .andReturn();
+
+        assertEquals(200, vocabulary.getStatusCode());
+
+        meetTypeId = vocabulary.jsonPath()
+                .getInt("find { it.name == 'Первичная встреча' }.id");
+        assertNotNull(meetTypeId, "В справочнике должен быть тип встречи 'Первичная встреча'");
+        assertTrue(meetTypeId > 0);
+    }
+
+    @Test
+    @Order(16)
     @Description("Фиксация проведения первой встречи по сделке")
     @DisplayName("Проведение первой встречи")
     public void createFirstMeeting() {
-        String body = "{\"meetTypeId\":11}"; // тип встречи из справочника VocTaskMeetType
+        String body = String.format("{\"meetTypeId\":%d}", meetTypeId);
 
         Response createMeeting = RestAssured
                 .given()
@@ -395,7 +417,7 @@ public class CreateDealTest {
     }
 
     @Test
-    @Order(16)
+    @Order(17)
     @Description("Заполнение анкеты контакта перед сделкой")
     @DisplayName("Обновление данных контакта")
     public void updateContactProfile() {
@@ -422,7 +444,7 @@ public class CreateDealTest {
     }
 
     @Test
-    @Order(17)
+    @Order(18)
     @Description("Обновление аналитики по лиду (целевой/нецелевой)")
     @DisplayName("Аналитика лида")
     public void updateInterestAnalytic() {
@@ -439,7 +461,7 @@ public class CreateDealTest {
     }
 
     @Test
-    @Order(18)
+    @Order(19)
     @Description("Заполнение анкеты интереса (форма объекта)")
     @DisplayName("Форма интереса")
     public void updateInterestForm() {
@@ -458,7 +480,7 @@ public class CreateDealTest {
     }
 
     @Test
-    @Order(19)
+    @Order(20)
     @Description("Подготовка сделки — перевод лида в статус 'Сделка'")
     @DisplayName("Подготовка сделки")
     public void prepareDeal() {
@@ -476,7 +498,7 @@ public class CreateDealTest {
     }
 
     @Test
-    @Order(20)
+    @Order(21)
     @Description("Проверка графика платежей по подготовленной сделке")
     @DisplayName("График платежей сделки")
     public void checkSchedulePayments() {
