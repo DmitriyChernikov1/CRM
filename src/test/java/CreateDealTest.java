@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CreateDealTest {
-    private static Integer egrnDocumentTypeId;
+    private static Integer egrnDocumentTypeId;// егрн
     private static Integer documentTypeId;
     private static Integer documentTemplateId;
     private static Integer bankId;
