@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CreateDealTest {
+    private static Integer egrnDocumentTypeId;
     private static Integer documentTypeId;
     private static Integer documentTemplateId;
     private static Integer bankId;
@@ -1101,5 +1102,143 @@ docTypes.prettyPrint();
         assertEquals(200, settlements.getStatusCode());
         assertFalse(settlements.jsonPath().getBoolean("dealHasSettlements"),
                 "На этапе отправки на регистрацию расчётов по сделке ещё быть не должно");
+    }
+    @Test
+    @Order(51)
+    @Description("Попытка перевести сделку в статус 'Зарегистрирован' без обязательных полей — ожидаем 422")
+    @DisplayName("Регистрация сделки без данных (негативный)")
+    public void registerDealWithoutRequiredFields() {
+        Response registered = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/registered")
+                .andReturn();
+
+        assertEquals(422, registered.getStatusCode());
+        java.util.List<String> missingFields = registered.jsonPath().getList("fields.field", String.class);
+        assertTrue(missingFields.contains("contract.registrationNumber"));
+        assertTrue(missingFields.contains("contract.registrationDate"));
+        assertTrue(missingFields.contains("loan.registrationNumber"));
+    }
+
+    @Test
+    @Order(52)
+    @Description("Заполнение номеров и дат регистрации договора и ипотеки")
+    @DisplayName("Заполнение данных регистрации сделки")
+    public void updateDealRegistrationData() {
+        String today = LocalDate.now().toString();
+
+        String body = String.format(
+                "{\"responsible\":{\"responsibleType\":\"USER\",\"responsibleId\":1}," +
+                        "\"contract\":{\"date\":\"%s\",\"fillingRosreestrDate\":\"%s\"," +
+                        "\"registrationNumber\":\"00000000\",\"registrationDate\":\"%s\"}," +
+                        "\"initialPaymentTerm\":5,\"signerId\":%d,\"formId\":1," +
+                        "\"loan\":{\"bankId\":%d,\"initialDepositAmount\":90000,\"initialDepositTerm\":5," +
+                        "\"contractAmount\":4457000,\"installmentPaymentDate\":15,\"contractDate\":\"%s\"," +
+                        "\"contractCity\":\"Воронеж\",\"registrationNumber\":\"000000000000\",\"registrationDate\":\"%s\"}," +
+                        "\"finishingId\":%d}",
+                today, today, today, signerId, bankId, today, today, finishingId
+        );
+
+        Response updateDeal = RestAssured
+                .given()
+                .log().ifValidationFails()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .put("/api/v1/deal/" + createdDealId)
+                .andReturn();
+
+        assertEquals(200, updateDeal.getStatusCode());
+        assertEquals(today, updateDeal.jsonPath().getString("contract.registrationDate"));
+    }
+
+    @Test
+    @Order(53)
+    @Description("Попытка регистрации без загруженной Выписки из ЕГРН — ожидаем 422")
+    @DisplayName("Регистрация сделки без Выписки из ЕГРН (негативный)")
+    public void registerDealWithoutEgrnDocument() {
+        Response registered = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/registered")
+                .andReturn();
+
+        assertEquals(422, registered.getStatusCode());
+        String error = registered.jsonPath().getString("error");
+        assertTrue(error.contains("Выписка из ЕГРН"),
+                "Ошибка должна указывать на необходимость загрузки Выписки из ЕГРН");
+    }
+
+    @Test
+    @Order(54)
+    @Description("Получение id типа документа 'Выписка из ЕГРН'")
+    @DisplayName("Поиск типа документа Выписка из ЕГРН")
+    public void findEgrnDocumentType() {
+        String body = "{\"name\":\"егрн\",\"autoLoaded\":false}";
+
+        Response docTypes = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/document_type/list?page=1&size=25")
+                .andReturn();
+
+        assertEquals(200, docTypes.getStatusCode());
+        egrnDocumentTypeId = docTypes.jsonPath().getInt("data[0].id");
+        assertEquals("Выписка из ЕГРН", docTypes.jsonPath().getString("data[0].name"));
+    }
+
+    @Test
+    @Order(55)
+    @Description("Загрузка файла Выписки из ЕГРН и прикрепление его к сделке")
+    @DisplayName("Загрузка Выписки из ЕГРН")
+    public void uploadEgrnDocument() {
+        java.io.File placeholderFile = new java.io.File("src/test/resources/placeholder-document.pdf");
+
+        Response uploadResponse = RestAssured
+                .given()
+                .multiPart("file", placeholderFile)
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/documents/upload")
+                .andReturn();
+
+        assertEquals(200, uploadResponse.getStatusCode());
+        String fileUuid = uploadResponse.jsonPath().getString("uuid");
+        assertNotNull(fileUuid, "Загруженный файл должен получить UUID");
+
+        String body = String.format(
+                "{\"documentTypeId\":%d,\"contactId\":%d,\"actual\":true,\"files\":[\"%s\"]," +
+                        "\"crmRelations\":[{\"typeId\":3,\"relatedId\":%d}]}",
+                egrnDocumentTypeId, createdContactId, fileUuid, createdDealId
+        );
+
+        Response attachDocument = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/deal/" + createdDealId + "/documents")
+                .andReturn();
+
+        assertEquals(200, attachDocument.getStatusCode());
+        assertEquals("Выписка из ЕГРН", attachDocument.jsonPath().getString("documentType.name"));
+    }
+
+    @Test
+    @Order(56)
+    @Description("Успешный перевод сделки в статус 'Зарегистрирован'")
+    @DisplayName("Регистрация сделки")
+    public void registerDeal() {
+        Response registered = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/registered")
+                .andReturn();
+
+        assertEquals(200, registered.getStatusCode());
+        assertEquals(createdDealId, registered.jsonPath().getInt("id"));
+
+        String dealStatus = registered.jsonPath().getString("status.name");
+        assertEquals("Зарегистрирован", dealStatus,
+                "После registered сделка должна перейти в статус 'Зарегистрирован'");
     }
 }
