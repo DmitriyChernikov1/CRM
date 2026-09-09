@@ -988,4 +988,38 @@ docTypes.prettyPrint();
         java.util.List<?> items = schedule.jsonPath().getList("items");
         assertFalse(items.isEmpty(), "График платежей должен содержать хотя бы один платёж");
     }
+    @Test
+    @Order(45)
+    @Description("Перевод подписанной сделки в статус готовности к регистрации")
+    @DisplayName("Готовность сделки к регистрации")
+    public void markDealReadyForRegistration() {
+        Response readyForRegistration = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/readyForRegistration")
+                .andReturn();
+
+        assertEquals(200, readyForRegistration.getStatusCode());
+        assertEquals(createdDealId, readyForRegistration.jsonPath().getInt("id"));
+
+        String dealStatus = readyForRegistration.jsonPath().getString("status.name");
+        assertEquals("Готов к регистрации", dealStatus,
+                "После вызова readyForRegistration сделка должна перейти в статус 'Готов к регистрации'");
+    }
+
+    @Test
+    @Order(46)
+    @Description("Проверка графика платежей сделки, готовой к регистрации")
+    @DisplayName("График платежей сделки, готовой к регистрации")
+    public void checkSchedulePaymentsAfterReadyForRegistration() {
+        Response schedule = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/deal/" + createdDealId + "/schedule_payments")
+                .andReturn();
+
+        assertEquals(200, schedule.getStatusCode());
+        double totalAmount = schedule.jsonPath().getDouble("totalAmount");
+        assertTrue(totalAmount > 0, "У сделки в статусе 'Готов к регистрации' должен быть сформирован график платежей");
+    }
 }
