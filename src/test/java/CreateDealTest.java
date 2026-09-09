@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CreateDealTest {
+    private static Integer documentTypeId;
+    private static Integer documentTemplateId;
     private static Integer bankId;
     private static Integer bankStatusApprovedId;
     private static Integer loanProgramId;
@@ -787,5 +789,165 @@ public class CreateDealTest {
 
         assertEquals(400, updateMortgage.getStatusCode(),
                 "Ожидается ошибка бизнес-правила: статус/способ оплаты сделки не позволяют заполнить дату кредитного договора");
+    }
+    @Test
+    @Order(35)
+    @Description("Проверка сделки на возможность формирования ДДУ")
+    @DisplayName("Проверка ДДУ")
+    public void checkDdu() {
+        Response checkDdu = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/check_ddu")
+                .andReturn();
+
+        assertEquals(200, checkDdu.getStatusCode());
+        assertEquals(createdDealId, checkDdu.jsonPath().getInt("id"));
+    }
+
+    @Test
+    @Order(36)
+    @Description("Попытка подписания сделки без даты кредитного договора — ожидаем 422")
+    @DisplayName("Подписание сделки без даты кредитного договора (негативный)")
+    public void signingWithoutContractDate() {
+        Response signing = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/signing")
+                .andReturn();
+
+        assertEquals(422, signing.getStatusCode());
+        java.util.List<String> missingFields = signing.jsonPath().getList("fields.field", String.class);
+        assertTrue(missingFields.contains("loan.contractDate"),
+                "Должно быть незаполнено поле 'Дата кредитного договора'");
+    }
+
+    @Test
+    @Order(37)
+    @Description("Заполнение даты кредитного договора и суммы по сделке")
+    @DisplayName("Заполнение даты кредитного договора сделки")
+    public void updateDealLoanContractDate() {
+        String today = LocalDate.now().toString();
+
+        String body = String.format(
+                "{\"responsible\":{\"responsibleType\":\"USER\",\"responsibleId\":1},\"initialPaymentTerm\":5," +
+                        "\"signerId\":%d,\"formId\":1," +
+                        "\"loan\":{\"bankId\":%d,\"initialDepositAmount\":90000,\"initialDepositTerm\":5," +
+                        "\"contractAmount\":4457000,\"installmentPaymentDate\":15,\"contractDate\":\"%s\"," +
+                        "\"contractCity\":\"Воронеж\"},\"finishingId\":%d}",
+                signerId, bankId, today, finishingId
+        );
+
+        Response updateDeal = RestAssured
+                .given()
+                .log().ifValidationFails()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .put("/api/v1/deal/" + createdDealId)
+                .andReturn();
+
+        assertEquals(200, updateDeal.getStatusCode());
+        assertEquals(today, updateDeal.jsonPath().getString("loan.contractDate"));
+    }
+
+    @Test
+    @Order(38)
+    @Description("Попытка подписания сделки без сгенерированного финального договора — ожидаем 422")
+    @DisplayName("Подписание сделки без финального договора (негативный)")
+    public void signingWithoutFinalDocument() {
+        Response signing = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/signing")
+                .andReturn();
+
+        assertEquals(422, signing.getStatusCode());
+        String error = signing.jsonPath().getString("error");
+        assertTrue(error.contains("финальную версию Договора"),
+                "Ошибка должна указывать на необходимость генерации финального договора");
+    }
+
+    @Test
+    @Order(39)
+    @Description("Получение id типа документа 'Первичный документ'")
+    @DisplayName("Справочник типов документов сделки")
+    public void getDocumentTypeId() {
+        String body = "{\"entityTypeId\":7,\"statusIds\":[5],\"autoLoaded\":true}";
+
+        Response docTypes = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/document_type/list?page=1&size=25")
+                .andReturn();
+docTypes.prettyPrint();
+        assertEquals(200, docTypes.getStatusCode());
+        documentTypeId = docTypes.jsonPath().getInt("data.find { it.name == 'Первичный документ' }.id");
+        assertNotNull(documentTypeId, "Должен быть тип документа 'Первичный документ'");
+
+    }
+
+    @Test
+    @Order(40)
+    @Description("Получение id шаблона договора для ипотеки от выбранного банка")
+    @DisplayName("Справочник шаблонов документов")
+    public void getDocumentTemplateId() {
+        String body = String.format(
+                "{\"page\":1,\"size\":1000,\"filter\":{\"entityTypeId\":7,\"documentTypeId\":%d," +
+                        "\"implementationTypeIds\":[12],\"bankId\":%d}}",
+                documentTypeId, bankId
+        );
+
+        Response templates = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .post("/api/v1/document_template/list")
+                .andReturn();
+
+        assertEquals(200, templates.getStatusCode());
+        int totalCount = templates.jsonPath().getInt("totalCount");
+        assertTrue(totalCount > 0, "Должен быть доступен хотя бы один шаблон договора для банка");
+        documentTemplateId = templates.jsonPath().getInt("data[0].id");
+        assertNotNull(documentTemplateId);
+    }
+
+    @Test
+    @Order(41)
+    @Description("Загрузка финальной версии договора для сделки")
+    @DisplayName("Сохранение финального договора")
+    public void saveFinalDocument() {
+        // Сервер ожидает валидный файл документа; содержимое реального ДДУ
+        // формируется UI на основе шаблона и не должно воспроизводиться в тесте.
+        // Используем заранее подготовленный placeholder-файл из ресурсов теста.
+        java.io.File placeholderDocx = new java.io.File("src/test/resources/placeholder-deal-document.docx");
+
+        Response saveDocument = RestAssured
+                .given()
+                .multiPart("file", placeholderDocx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                .headers("Authorization", "Bearer " + accessToken)
+                .queryParam("documentTypeId", documentTypeId)
+                .queryParam("templateId", documentTemplateId)
+                .queryParam("documentStageId", 2)
+                .post("/api/v1/deal/" + createdDealId + "/documents/save")
+                .andReturn();
+
+        assertEquals(200, saveDocument.getStatusCode());
+        String documentStage = saveDocument.jsonPath().getString("documentStage.name");
+        assertEquals("Финальный документ", documentStage);
+    }
+
+    @Test
+    @Order(42)
+    @Description("Успешное подписание сделки после генерации финального договора")
+    @DisplayName("Подписание сделки")
+    public void signDeal() {
+        Response signing = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/signing")
+                .andReturn();
+
+        assertEquals(200, signing.getStatusCode());
     }
 }
