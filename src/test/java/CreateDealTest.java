@@ -1022,4 +1022,84 @@ docTypes.prettyPrint();
         double totalAmount = schedule.jsonPath().getDouble("totalAmount");
         assertTrue(totalAmount > 0, "У сделки в статусе 'Готов к регистрации' должен быть сформирован график платежей");
     }
+    @Test
+    @Order(47)
+    @Description("Попытка отправить сделку на регистрацию без даты подачи в Росреестр — ожидаем 422")
+    @DisplayName("Отправка на регистрацию без даты подачи (негативный)")
+    public void sentForRegistrationWithoutRosreestrDate() {
+        Response sentForRegistration = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/sentForRegistration")
+                .andReturn();
+
+        assertEquals(422, sentForRegistration.getStatusCode());
+        java.util.List<String> missingFields = sentForRegistration.jsonPath().getList("fields.field", String.class);
+        assertTrue(missingFields.contains("contract.fillingRosreestrDate"),
+                "Должно быть незаполнено поле 'Дата подачи в Росреестр'");
+    }
+
+    @Test
+    @Order(48)
+    @Description("Заполнение даты подачи договора в Росреестр")
+    @DisplayName("Заполнение даты подачи в Росреестр")
+    public void updateDealRosreestrDate() {
+        String today = LocalDate.now().toString();
+
+        String body = String.format(
+                "{\"responsible\":{\"responsibleType\":\"USER\",\"responsibleId\":1}," +
+                        "\"contract\":{\"date\":\"%s\",\"fillingRosreestrDate\":\"%s\"},\"initialPaymentTerm\":5," +
+                        "\"signerId\":%d,\"formId\":1," +
+                        "\"loan\":{\"bankId\":%d,\"initialDepositAmount\":90000,\"initialDepositTerm\":5," +
+                        "\"contractAmount\":4457000,\"installmentPaymentDate\":15,\"contractDate\":\"%s\"," +
+                        "\"contractCity\":\"Воронеж\"},\"finishingId\":%d}",
+                today, today, signerId, bankId, today, finishingId
+        );
+
+        Response updateDeal = RestAssured
+                .given()
+                .log().ifValidationFails()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .put("/api/v1/deal/" + createdDealId)
+                .andReturn();
+
+        assertEquals(200, updateDeal.getStatusCode());
+        assertEquals(today, updateDeal.jsonPath().getString("contract.fillingRosreestrDate"));
+    }
+
+    @Test
+    @Order(49)
+    @Description("Успешная отправка сделки на регистрацию")
+    @DisplayName("Отправка сделки на регистрацию")
+    public void sentForRegistration() {
+        Response sentForRegistration = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/sentForRegistration")
+                .andReturn();
+
+        assertEquals(200, sentForRegistration.getStatusCode());
+        assertEquals(createdDealId, sentForRegistration.jsonPath().getInt("id"));
+
+        String dealStatus = sentForRegistration.jsonPath().getString("status.name");
+        assertEquals("Отправлен на регистрацию", dealStatus,
+                "После sentForRegistration сделка должна перейти в статус 'Отправлен на регистрацию'");
+    }
+
+    @Test
+    @Order(50)
+    @Description("Проверка отсутствия расчётов (settlements) по сделке на данном этапе")
+    @DisplayName("Проверка расчётов по сделке")
+    public void checkDealHasNoSettlements() {
+        Response settlements = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/settlement/dealHasSettlements/" + createdDealId)
+                .andReturn();
+
+        assertEquals(200, settlements.getStatusCode());
+        assertFalse(settlements.jsonPath().getBoolean("dealHasSettlements"),
+                "На этапе отправки на регистрацию расчётов по сделке ещё быть не должно");
+    }
 }
