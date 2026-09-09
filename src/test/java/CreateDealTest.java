@@ -16,6 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CreateDealTest {
+    private static Integer bankId;
+    private static Integer bankStatusApprovedId;
+    private static Integer loanProgramId;
     private static Integer signerId;
     private static Integer counterpartiesId; // id участника сделки
     private static Integer createdRequisitesId;  // id реквизита
@@ -674,5 +677,115 @@ public class CreateDealTest {
 
         String dealStatus = coordinate.jsonPath().getString("status.name");
         assertEquals("Согласование", dealStatus, "После успешного coordinate сделка должна перейти в статус 'Согласование'");
+    }
+    @Test
+    @Order(30)
+    @Description("Получение id банка и статуса 'Одобрена' из справочников")
+    @DisplayName("Справочники банка и статуса ипотеки")
+    public void getBankAndStatusVocabularies() {
+        Response bankVoc = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/vocabulary/VocBank")
+                .andReturn();
+        assertEquals(200, bankVoc.getStatusCode());
+        bankId = bankVoc.jsonPath().getInt("find { it.name == 'ПАО Сбербанк' }.id");
+        assertNotNull(bankId, "В справочнике должен быть банк 'ПАО Сбербанк'");
+
+        Response statusVoc = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/vocabulary/VocMortgageBankStatus")
+                .andReturn();
+        assertEquals(200, statusVoc.getStatusCode());
+        bankStatusApprovedId = statusVoc.jsonPath().getInt("find { it.name == 'Одобрена' }.id");
+        assertNotNull(bankStatusApprovedId, "В справочнике должен быть статус 'Одобрена'");
+    }
+
+    @Test
+    @Order(31)
+    @Description("Обновление ипотеки: выбор банка и перевод статуса в 'Одобрена'")
+    @DisplayName("Одобрение ипотеки банком")
+    public void updateMortgageToApproved() {
+        String body = String.format(
+                "{\"crmRelations\":[{\"typeId\":1,\"relatedId\":%d},{\"typeId\":2,\"relatedId\":%d},{\"typeId\":3,\"relatedId\":%d}]," +
+                        "\"responsible\":{\"responsibleType\":\"USER\",\"responsibleId\":1}," +
+                        "\"bankProvidedCd\":true,\"guaranteeLetterSent\":false,\"provider\":1," +
+                        "\"bankStatus\":%d,\"bank\":%d}",
+                createdInterestId, createdContactId, createdDealId, bankStatusApprovedId, bankId
+        );
+
+        Response updateMortgage = RestAssured
+                .given()
+                .log().ifValidationFails()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .put("/api/v1/mortgage/" + createdMortgageId)
+                .andReturn();
+
+        assertEquals(200, updateMortgage.getStatusCode());
+        assertEquals("Одобрена", updateMortgage.jsonPath().getString("bankStatus.name"));
+        assertEquals("ПАО Сбербанк", updateMortgage.jsonPath().getString("bank.name"));
+    }
+
+    @Test
+    @Order(32)
+    @Description("Попытка перевести ипотеку в плановую без обязательных полей — ожидаем 422")
+    @DisplayName("Плановая ипотека без данных (негативный)")
+    public void markMortgagePlannedWithoutRequiredFields() {
+        Response planned = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/mortgage/" + createdMortgageId + "/planned")
+                .andReturn();
+
+        assertEquals(422, planned.getStatusCode());
+        java.util.List<String> missingFields = planned.jsonPath().getList("fields.field", String.class);
+        assertTrue(missingFields.contains("program"), "Должно быть незаполнено поле 'Программа кредитования'");
+        assertTrue(missingFields.contains("contractDate"), "Должно быть незаполнено поле 'Дата кредитного договора'");
+    }
+
+    @Test
+    @Order(33)
+    @Description("Получение id программы кредитования 'ИТ ипотека'")
+    @DisplayName("Справочник программ кредитования")
+    public void getLoanProgramId() {
+        Response loanProgramVoc = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/vocabulary/VocLoanProgram")
+                .andReturn();
+
+        assertEquals(200, loanProgramVoc.getStatusCode());
+        loanProgramId = loanProgramVoc.jsonPath().getInt("find { it.name == 'ИТ ипотека' }.id");
+        assertNotNull(loanProgramId, "В справочнике должна быть программа 'ИТ ипотека'");
+    }
+
+    @Test
+    @Order(34)
+    @Description("Попытка заполнить дату кредитного договора при несоответствующем статусе/способе оплаты сделки — ожидаем 400")
+    @DisplayName("Дата кредитного договора при нарушении бизнес-правила (негативный)")
+    public void setContractDateViolatesBusinessRule() {
+        String today = LocalDate.now().toString();
+
+        String body = String.format(
+                "{\"crmRelations\":[{\"typeId\":1,\"relatedId\":%d},{\"typeId\":2,\"relatedId\":%d},{\"typeId\":3,\"relatedId\":%d}]," +
+                        "\"responsible\":{\"responsibleType\":\"USER\",\"responsibleId\":1}," +
+                        "\"contractDate\":\"%s\",\"initialDepositNotAnketa\":90000,\"program\":%d," +
+                        "\"bankProvidedCd\":true,\"guaranteeLetterSent\":false,\"provider\":1," +
+                        "\"bankStatus\":%d,\"bank\":%d}",
+                createdInterestId, createdContactId, createdDealId, today, loanProgramId,
+                bankStatusApprovedId, bankId
+        );
+
+        Response updateMortgage = RestAssured
+                .given()
+                .body(body)
+                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
+                .put("/api/v1/mortgage/" + createdMortgageId)
+                .andReturn();
+
+        assertEquals(400, updateMortgage.getStatusCode(),
+                "Ожидается ошибка бизнес-правила: статус/способ оплаты сделки не позволяют заполнить дату кредитного договора");
     }
 }
