@@ -7,7 +7,7 @@ import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-public class OtherTest {
+public class InIimplementationTest {
 
     public static String accessToken;
     static {
@@ -30,7 +30,7 @@ public class OtherTest {
     @DisplayName("получение списка")
     @Description("получение списков")
     public void getList(){
-        String body = "{\"page\":1,\"size\":100,\"sortBy\":[{\"property\":\"price\",\"direction\":\"ASC\"}],\"filter\":{\"price\":{},\"statusIds\":[1]}}";
+        String body = "{\"page\":1,\"size\":50,\"sortBy\":[{\"property\":\"price\",\"direction\":\"ASC\"}],\"filter\":{\"complexId\":16,\"price\":{},\"statusIds\":[5]}}";
         Response list = RestAssured
                 .given()
                 .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")

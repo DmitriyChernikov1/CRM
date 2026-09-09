@@ -583,6 +583,7 @@ public class CreateDealTest {
         assertEquals(200, userSearch.getStatusCode());
         signerId = userSearch.jsonPath().getInt("data[0].id");
         assertNotNull(signerId, "Должен быть найден пользователь-подписант");
+        System.out.println(signerId);
 
     }
 
@@ -597,13 +598,13 @@ public class CreateDealTest {
                 "{\"responsible\":{\"responsibleType\":\"USER\",\"responsibleId\":1}," +
                         "\"contract\":{\"date\":\"%s\"},\"initialPaymentTerm\":5," +
                         "\"registration\":{\"registrationTypeId\":2},\"creditLetter\":{\"creditLetterId\":3}," +
-                        "\"signerId\":1,\"formId\":1," +
+                        "\"signerId\":%d,\"formId\":1," +  // здесь подставляем signerId
                         "\"loan\":{\"bankId\":1,\"initialDepositAmount\":90000,\"initialDepositTerm\":5," +
                         "\"installmentPaymentDate\":15,\"contractCity\":\"Воронеж\"}," +
                         "\"finishingId\":%d," +
                         "\"counterparties\":[{\"id\":%d,\"requisitesTypeId\":1,\"clientRoleId\":1," +
                         "\"useRequisitesForRefund\":false,\"engaged\":false}]}",
-                today, finishingId, counterpartiesId
+                today, signerId, finishingId, counterpartiesId  // добавляем signerId в аргументы
         );
 
         Response updateDeal = RestAssured
