@@ -4,8 +4,7 @@ import io.restassured.response.Response;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -949,5 +948,44 @@ docTypes.prettyPrint();
                 .andReturn();
 
         assertEquals(200, signing.getStatusCode());
+    }
+    @Test
+    @Order(43)
+    @Description("Подписание сделки (финальное действие после успешного signing)")
+    @DisplayName("Финальное подписание сделки")
+    public void signDealFinal() {
+        Response sign = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .post("/api/v1/deal/" + createdDealId + "/sign")
+                .andReturn();
+
+        assertEquals(200, sign.getStatusCode());
+        assertEquals(createdDealId, sign.jsonPath().getInt("id"));
+
+        String dealStatus = sign.jsonPath().getString("status.name");
+        assertEquals("Подписан", dealStatus, "После подписания сделка должна перейти в статус 'Подписан'");
+
+        String contractNumber = sign.jsonPath().getString("contract.number");
+        assertNotNull(contractNumber, "У подписанной сделки должен быть присвоен номер договора");
+    }
+
+    @Test
+    @Order(44)
+    @Description("Проверка сгенерированного графика платежей после подписания сделки")
+    @DisplayName("График платежей подписанной сделки")
+    public void checkSchedulePaymentsAfterSign() {
+        Response schedule = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/deal/" + createdDealId + "/schedule_payments")
+                .andReturn();
+
+        assertEquals(200, schedule.getStatusCode());
+        double totalAmount = schedule.jsonPath().getDouble("totalAmount");
+        assertTrue(totalAmount > 0, "После подписания график платежей должен быть сформирован");
+
+        java.util.List<?> items = schedule.jsonPath().getList("items");
+        assertFalse(items.isEmpty(), "График платежей должен содержать хотя бы один платёж");
     }
 }
