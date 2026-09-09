@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CreateDealTest {
+    private static Integer signerId;
     private static Integer counterpartiesId; // id участника сделки
     private static Integer createdRequisitesId;  // id реквизита
     private static Integer finishingId; // отделка
@@ -553,7 +554,6 @@ public class CreateDealTest {
         createdRequisitesId = requisitesList.jsonPath().getInt("data[0].id");
         assertNotNull(createdRequisitesId, "ID реквизитов не должен быть null");
     }
-
     @Test
     @Order(24)
     @Description("Получение доступных вариантов отделки по сделке")
@@ -569,9 +569,25 @@ public class CreateDealTest {
         finishingId = finishing.jsonPath().getInt("[0].id");
         assertNotNull(finishingId, "Для сделки должен быть доступен хотя бы один вариант отделки");
     }
+    @Test
+    @Order(25) // выполняется после getFinishingOptions, перед updateDealDetails — сдвиньте нумерацию остальных на +1
+    @Description("Получение id ответственного пользователя для назначения подписантом сделки")
+    @DisplayName("Пользователь-подписант")
+    public void getSignerUserId() {
+        Response userSearch = RestAssured
+                .given()
+                .headers("Authorization", "Bearer " + accessToken)
+                .get("/api/v1/user/search?property=title&direction=ASC&ids=1")
+                .andReturn();
+
+        assertEquals(200, userSearch.getStatusCode());
+        signerId = userSearch.jsonPath().getInt("data[0].id");
+        assertNotNull(signerId, "Должен быть найден пользователь-подписант");
+
+    }
 
     @Test
-    @Order(25)
+    @Order(26)
     @Description("Заполнение обязательных полей сделки: договор, регистрация, кредит, отделка, реквизиты")
     @DisplayName("Заполнение данных сделки")
     public void updateDealDetails() {
@@ -607,7 +623,7 @@ public class CreateDealTest {
     }
 
     @Test
-    @Order(26)
+    @Order(27)
     @Description("Попытка согласовать сделку без графика платежей — ожидаем 422")
     @DisplayName("Согласование сделки без графика платежей (негативный)")
     public void coordinateDealWithoutSchedule() {
@@ -623,7 +639,7 @@ public class CreateDealTest {
     }
 
     @Test
-    @Order(27)
+    @Order(28)
     @Description("Генерация графика платежей по сделке")
     @DisplayName("Генерация графика платежей")
     public void generateSchedulePayments() {
@@ -642,7 +658,7 @@ public class CreateDealTest {
     }
 
     @Test
-    @Order(28)
+    @Order(29)
     @Description("Успешное согласование сделки после заполнения всех обязательных данных")
     @DisplayName("Согласование сделки")
     public void coordinateDeal() {
