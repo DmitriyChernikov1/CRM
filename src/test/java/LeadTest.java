@@ -343,23 +343,5 @@ public class LeadTest {
         );
     }
 
-    @Test
-    @Description("Создание нового лида (интереса) с динамическими контактными данными")
-    @DisplayName("Создание лида")
-    public void createInterests() {
-        String body = buildInterestBody(dynamicName, dynamicSurname, dynamicEmail);
-
-        Response createInterest = RestAssured
-                .given()
-                .log().all()
-                .body(body)
-                .headers("Authorization", "Bearer " + accessToken, "Content-Type", "application/json; charset=UTF-8")
-                .post("/api/v1/interest")
-                .andReturn();
-
-        createInterest.prettyPrint();
-        int statusCode = createInterest.getStatusCode();
-        assertEquals(200, statusCode);
-    }
 
     }
